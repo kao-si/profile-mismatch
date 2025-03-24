@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+Resume-Study_Data/**
+*.sav
+*.xlsx
+*.Rproj
+*.html
+.DS_Store

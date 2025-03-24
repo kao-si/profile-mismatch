@@ -1,0 +1,341 @@
+---
+title: "Resume Study_Check Raw Data"
+output:
+    html_document:
+        toc: true
+        toc_float: true
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Load packages
+
+library(tidyverse)
+library(lubridate)
+
+# Import raw data
+
+dat_res <- read_rds("Resume-Study_Data/res-level_raw.rds")
+
+dat_post <- read_rds("Resume-Study_Data/post-level_raw.rds")
+```
+
+# Resume level data
+
+## Check for correct markings of "error"
+
+```{r}
+# Number of resumes with "error" in the comment
+dat_res %>%
+filter(str_detect(cmt, "error")) %>%
+nrow()
+
+# Check for posts with only one resume marked as "error"
+dat_res %>%
+filter(str_detect(cmt, "error")) %>%
+count(post_id) %>%
+filter(n != 2)
+```
+
+## Data manipulation
+
+```{r}
+# Exclude non-usable posts
+dat_res <- dat_res %>%
+filter(!str_detect(cmt, "error"))
+
+# Replace empty strings with NA
+
+dat_res <- dat_res %>%
+mutate(across(where(is.character), ~ na_if(., "")))
+
+dat_post <- dat_post %>%
+mutate(across(where(is.character), ~ na_if(., "")))
+
+# Recode response variables
+dat_res <- dat_res %>%
+mutate(
+    rsp = case_when(
+        is.na(rsp) ~ "no",
+        TRUE ~ rsp
+    ),
+    rsp_call = case_when(
+        is.na(rsp_call) ~ "no",
+        TRUE ~ rsp_call
+    ),
+    rsp_wechat = case_when(
+        is.na(rsp_wechat) ~ "no",
+        TRUE ~ rsp_wechat
+    )
+)
+
+# Construction of time variables
+dat_res <- dat_res %>%
+mutate(
+    subtime2 = case_when(
+        as.numeric(substr(subday, 1, 2)) < 9
+        ~ ymd_hms(paste0("2025", subday, subtime, "00")),
+        TRUE ~ ymd_hms(paste0("2024", subday, subtime, "00"))
+    ),
+    rsp_time2 = case_when(
+        as.numeric(substr(rsp_day, 1, 2)) < 9
+        ~ ymd_hms(paste0("2025", rsp_day, rsp_time, "00")),
+        TRUE ~ ymd_hms(paste0("2024", rsp_day, rsp_time, "00"))
+    ),
+    sub_year = year(subtime2),
+    sub_month = month(subtime2, label = TRUE),
+    sub_wday = wday(subtime2, label = TRUE),
+    sub_hour = hour(subtime2),
+    rsp_year = year(rsp_time2),
+    rsp_month = month(rsp_time2, label = TRUE),
+    rsp_wday = wday(rsp_time2, label = TRUE),
+    rsp_hour = hour(rsp_time2)
+)
+```
+
+## Check for correct markings of "error" (after exclusion)
+
+```{r}
+# Number of resumes with "error" in the comment
+dat_res %>%
+filter(str_detect(cmt, "error")) %>%
+nrow()
+
+# Check for posts with only one resume marked as "error"
+dat_res %>%
+filter(str_detect(cmt, "error")) %>%
+count(post_id) %>%
+filter(n != 2)
+```
+
+## Variable values
+
+```{r}
+duplicated(dat_res$res_id) %>% sum()
+
+duplicated(dat_res$post_id) %>% sum()
+
+count(dat_res, post_id) %>% filter(n != 2)
+
+count(dat_res, sub_order)
+
+count(dat_res, res_type)
+
+count(dat_res, res_type, sub_order)
+
+count(dat_res, pcat)
+
+count(dat_res, pcity)
+```
+
+## Check for mismatches of `post_id` between the two data sets
+
+```{r}
+dat_res %>%
+anti_join(dat_post, by = "post_id") %>%
+select(res_id, post_id, pcity)
+```
+
+## Check for anomalies in time variables
+
+```{r}
+# 1. NAs in subday and subtime
+dat_res %>%
+    filter(is.na(subday) | is.na(subtime)) %>%
+    select(res_id, pcity, subday, subtime)
+
+# 2. Check that all time variables have the correct string length (4):
+dat_res %>%
+    filter(nchar(subday) != 4 | nchar(subtime) != 4 |
+                 nchar(rsp_day) != 4 | nchar(rsp_time) != 4) %>%
+    select(res_id, pcity, subday, subtime, rsp_day, rsp_time)
+
+# 3. Check valid range for subday (date in 2024-09-09 to 2025-02-25)
+
+# Helper function: convert mmdd string to a Date (2024 if month>=9, else 2025)
+convert_mmdd <- function(x, thresh_month = 9,
+year_before = 2024, year_after = 2025) {
+  month_val <- as.integer(substr(x, 1, 2))
+  day_val <- substr(x, 3, 4)
+  year_use <- ifelse(month_val >= thresh_month, year_before, year_after)
+  as.Date(sprintf("%d-%02d-%s", year_use, month_val, day_val))
+}
+
+dat_res <- dat_res %>% mutate(subday_date = convert_mmdd(subday))
+
+dat_res %>%
+  filter(subday_date < as.Date("2024-09-09") |
+  subday_date > as.Date("2025-02-25")) %>%
+  select(res_id, pcity, subday, subday_date)
+
+# 4. Check valid range for rsp_day (date in 2024-09-09 to 2025-03-01)
+dat_res <- dat_res %>% mutate(rsp_day_date = convert_mmdd(rsp_day))
+
+dat_res %>%
+  filter(rsp_day_date < as.Date("2024-09-09") |
+  rsp_day_date > as.Date("2025-03-01")) %>%
+  select(res_id, pcity, rsp_day, rsp_day_date)
+
+# 5. Check valid range for subtime and rsp_time (numeric between 0000 and 2400)
+dat_res <- dat_res %>%
+  mutate(subtime_num = as.numeric(subtime),
+         rsp_time_num = as.numeric(rsp_time))
+
+dat_res %>%
+  filter(subtime_num < 0 | subtime_num > 2400) %>%
+  select(res_id, pcity, subtime, subtime_num)
+
+dat_res %>%
+  filter(rsp_time_num < 0 | rsp_time_num > 2400) %>%
+  select(res_id, pcity, rsp_time, rsp_time_num)
+
+# 6. rsp_time2 should be after sub_time2
+dat_res %>%
+  filter(subtime2 > rsp_time2) %>%
+  select(res_id, pcity, subtime2, rsp_time2)
+```
+
+## Check for balance of time variables
+
+```{r}
+iwalk(select(dat_res, sub_year:rsp_hour), ~ {
+  cat("Column:", .y, "\n")
+  print(count(data.frame(x = .x), x, .drop = FALSE))
+  cat("\n")
+})
+```
+
+## Check for response variables
+
+```{r}
+# Distribution of response status
+count(dat_res, rsp, sub_order)
+
+# Check for inconsistencies between `rsp` and `rsp_msg`
+dat_res %>%
+filter((rsp == "no" & !is.na(rsp_msg)) | (rsp == "yes" & is.na(rsp_msg))) %>%
+select(res_id, pcity, rsp)
+
+# Check for inconsistencies between `rsp` and `rsp_cat`
+dat_res %>%
+filter(rsp == "no", !is.na(rsp_cat)) %>%
+select(res_id, pcity, rsp, rsp_cat)
+
+# Check for inconsistencies between `rsp` and `rsp_call`
+dat_res %>%
+filter(rsp == "no", rsp_call != "no") %>%
+select(res_id, pcity, rsp, rsp_call)
+
+# Check for inconsistencies between `rsp` and `rsp_wechat`
+dat_res %>%
+filter(rsp == "no", rsp_wechat != "no") %>%
+select(res_id, pcity, rsp, rsp_wechat)
+
+# Incorrect values for `rsp_call` and `rsp_wechat`
+dat_res %>%
+filter(!rsp_call %in% c("yes", "no") | !rsp_wechat %in% c("yes", "no")) %>%
+select(res_id, pcity)
+```
+
+## Cross check `rsp_cat`
+
+```{r}
+proc_cat_gd <- dat_res %>%
+filter(rsp == "yes", res_id <= 3000) %>%
+select(res_id, post_id, pcity, rsp, rsp_call, rsp_wechat, cmt, rsp_msg, rsp_cat)
+
+proc_cat_bj <- dat_res %>%
+filter(rsp == "yes", res_id > 3000, res_id <= 6000) %>%
+select(res_id, post_id, pcity, rsp, rsp_call, rsp_wechat, cmt, rsp_msg, rsp_cat)
+
+proc_cat_sh <- dat_res %>%
+filter(rsp == "yes", res_id > 6000) %>%
+select(res_id, post_id, pcity, rsp, rsp_call, rsp_wechat, cmt, rsp_msg, rsp_cat)
+
+haven::write_sav(proc_cat_gd, "proc_cat_gd.sav")
+haven::write_sav(proc_cat_bj, "proc_cat_bj.sav")
+haven::write_sav(proc_cat_sh, "proc_cat_sh.sav")
+```
+
+# Post level data
+
+## Data manipulation
+
+```{r}
+# Replace empty strings with NA
+dat_post <- dat_post %>%
+mutate(across(where(is.character), ~ na_if(., "")))
+```
+
+## Variable values
+
+```{r}
+duplicated(dat_post$post_id) %>% sum()
+
+count(dat_post, post_id) %>% filter(n != 1)
+
+count(dat_post, preg) %>% arrange(desc(n))
+
+count(dat_post, pcat) %>% arrange(desc(n))
+
+count(dat_post, pcity) %>% arrange(desc(n))
+
+count(dat_post, pexp) %>% arrange(desc(n))
+
+count(dat_post, pedu) %>% arrange(desc(n))
+
+count(dat_post, psal_lower) %>% arrange(desc(n))
+
+count(dat_post, psal_upper) %>% arrange(desc(n))
+
+count(dat_post, psal_mon) %>% arrange(desc(n))
+
+dat_post %>% filter(pcandno <= 0) %>% select(post_id, pcandno)
+
+count(dat_post, flogo) %>% arrange(desc(n))
+
+count(dat_post, fsize) %>% arrange(desc(n))
+
+count(dat_post, ffinc) %>% arrange(desc(n))
+
+dat_post %>% filter(fpostno <= 0) %>% select(post_id, fpostno)
+
+dat_post %>% filter(fhrno <= 0) %>% select(post_id, fhrno)
+
+count(dat_post, fcat) %>% arrange(desc(n))
+
+count(dat_post, fcap) %>% arrange(desc(n))
+
+count(dat_post, fhour) %>% arrange(desc(n))
+
+count(dat_post, fdayoff) %>% arrange(desc(n))
+
+count(dat_post, falbum) %>% arrange(desc(n))
+
+count(dat_post, rmale) %>% arrange(desc(n))
+
+count(dat_post, rsta) %>% arrange(desc(n))
+
+dat_post %>% filter(rpostno <= 0) %>% select(post_id, rpostno)
+```
+
+## Check for `rname` and `rmale` consistency
+
+```{r}
+# Gender identification with no name
+dat_post %>%
+filter(is.na(rname), !is.na(rmale)) %>%
+select(post_id, rname, rmale)
+
+# No gender identification for some names
+dat_post %>%
+filter(!is.na(rname), is.na(rmale)) %>%
+select(post_id, rname, rmale)
+
+# Check for gender consistency
+dat_post %>%
+filter((str_detect(rname, "先生") & (!rmale == "yes" | is.na(rmale))) |
+(str_detect(rname, "女士") & (!rmale == "no" | is.na(rmale)))) %>%
+select(post_id, rname, rmale)
+```
