@@ -320,22 +320,84 @@ count(dat_post, rsta) %>% arrange(desc(n))
 dat_post %>% filter(rpostno <= 0) %>% select(post_id, rpostno)
 ```
 
+## Join with resume level data
+
+```{r}
+# Rename variables in resume level data
+dat_res <- dat_res %>%
+rename(
+    res_ptitle = ptitle,
+    res_fname = fname,
+    res_rname = rname
+)
+
+# Remove and rename variables in post level data
+dat_post <- dat_post %>%
+select(-c(pcat, pcity)) %>%
+rename(
+    post_ptitle = ptitle,
+    post_fname = fname,
+    post_rname = rname
+)
+
+# Join data
+dat <- dat_res %>%
+left_join(
+    dat_post,
+    by = "post_id",
+    relationship = "many-to-one"
+)
+
+# Fill missing values in post level data from resume level data
+dat <- dat %>%
+mutate(
+    post_ptitle = coalesce(post_ptitle, res_ptitle),
+    post_fname = coalesce(post_fname, res_fname),
+    post_rname = coalesce(post_rname, res_rname)
+)
+
+# Correct errors in recruiter gender identification
+dat <- dat %>%
+mutate(
+    rmale = case_when(
+        str_detect(post_rname, "先生") & (!rmale == "yes" | is.na(rmale))
+        ~ "yes",
+        str_detect(post_rname, "女士") & (!rmale == "no" | is.na(rmale))
+        ~ "no",
+        TRUE ~ rmale
+    )
+)
+```
+
 ## Check for `rname` and `rmale` consistency
 
 ```{r}
 # Gender identification with no name
-dat_post %>%
-filter(is.na(rname), !is.na(rmale)) %>%
-select(post_id, rname, rmale)
+dat %>%
+filter(is.na(post_rname), !is.na(rmale)) %>%
+select(post_id, post_rname, rmale)
 
-# No gender identification for some names
-dat_post %>%
-filter(!is.na(rname), is.na(rmale)) %>%
-select(post_id, rname, rmale)
+# No gender identification with names
+dat %>%
+filter(!is.na(post_rname), is.na(rmale)) %>%
+select(post_id, post_rname, rmale) %>%
+distinct(post_id, post_rname, rmale)
 
 # Check for gender consistency
-dat_post %>%
-filter((str_detect(rname, "先生") & (!rmale == "yes" | is.na(rmale))) |
-(str_detect(rname, "女士") & (!rmale == "no" | is.na(rmale)))) %>%
-select(post_id, rname, rmale)
+dat %>%
+filter((str_detect(post_rname, "先生") & (!rmale == "yes" | is.na(rmale))) |
+(str_detect(post_rname, "女士") & (!rmale == "no" | is.na(rmale)))) %>%
+select(post_id, post_rname, rmale)
+```
+
+## Check for inconsistencies in `ptitle` and `fname`
+
+```{r}
+dat %>%
+filter(res_ptitle != post_ptitle) %>%
+select(post_id, res_ptitle, post_ptitle)
+
+dat %>%
+filter(res_fname != post_fname) %>%
+select(post_id, res_fname, post_fname)
 ```

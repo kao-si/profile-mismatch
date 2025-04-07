@@ -67,3 +67,50 @@ mutate(
 # Replace empty strings with NA
 dat_post <- dat_post %>%
 mutate(across(where(is.character), ~ na_if(., "")))
+
+# Join Resume and Post Level Data ####
+
+# Rename variables in resume level data
+dat_res <- dat_res %>%
+rename(
+    res_ptitle = ptitle,
+    res_fname = fname,
+    res_rname = rname
+)
+
+# Remove and rename variables in post level data
+dat_post <- dat_post %>%
+select(-c(pcat, pcity)) %>%
+rename(
+    post_ptitle = ptitle,
+    post_fname = fname,
+    post_rname = rname
+)
+
+# Join data
+dat <- dat_res %>%
+left_join(
+    dat_post,
+    by = "post_id",
+    relationship = "many-to-one"
+)
+
+# Fill missing values in post level data from resume level data
+dat <- dat %>%
+mutate(
+    post_ptitle = coalesce(post_ptitle, res_ptitle),
+    post_fname = coalesce(post_fname, res_fname),
+    post_rname = coalesce(post_rname, res_rname)
+)
+
+# Correct errors in recruiter gender identification
+dat <- dat %>%
+mutate(
+    rmale = case_when(
+        str_detect(post_rname, "先生") & (!rmale == "yes" | is.na(rmale))
+        ~ "yes",
+        str_detect(post_rname, "女士") & (!rmale == "no" | is.na(rmale))
+        ~ "no",
+        TRUE ~ rmale
+    )
+)
