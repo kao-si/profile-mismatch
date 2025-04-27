@@ -240,7 +240,7 @@ select(res_id, pcity)
 
 ## Cross check `rsp_cat`
 
-```{r}
+```{r, eval = FALSE}
 proc_cat_gd <- dat_res %>%
 filter(rsp == "yes", res_id <= 3000) %>%
 select(res_id, post_id, pcity, rsp, rsp_call, rsp_wechat, cmt, rsp_msg, rsp_cat)
@@ -260,66 +260,6 @@ haven::write_sav(proc_cat_sh, "proc_cat_sh.sav")
 
 # Post level data
 
-## Data manipulation
-
-```{r}
-# Replace empty strings with NA
-dat_post <- dat_post %>%
-mutate(across(where(is.character), ~ na_if(., "")))
-```
-
-## Variable values
-
-```{r}
-duplicated(dat_post$post_id) %>% sum()
-
-count(dat_post, post_id) %>% filter(n != 1)
-
-count(dat_post, preg) %>% arrange(desc(n))
-
-count(dat_post, pcat) %>% arrange(desc(n))
-
-count(dat_post, pcity) %>% arrange(desc(n))
-
-count(dat_post, pexp) %>% arrange(desc(n))
-
-count(dat_post, pedu) %>% arrange(desc(n))
-
-count(dat_post, psal_lower) %>% arrange(desc(n))
-
-count(dat_post, psal_upper) %>% arrange(desc(n))
-
-count(dat_post, psal_mon) %>% arrange(desc(n))
-
-dat_post %>% filter(pcandno <= 0) %>% select(post_id, pcandno)
-
-count(dat_post, flogo) %>% arrange(desc(n))
-
-count(dat_post, fsize) %>% arrange(desc(n))
-
-count(dat_post, ffinc) %>% arrange(desc(n))
-
-dat_post %>% filter(fpostno <= 0) %>% select(post_id, fpostno)
-
-dat_post %>% filter(fhrno <= 0) %>% select(post_id, fhrno)
-
-count(dat_post, fcat) %>% arrange(desc(n))
-
-count(dat_post, fcap) %>% arrange(desc(n))
-
-count(dat_post, fhour) %>% arrange(desc(n))
-
-count(dat_post, fdayoff) %>% arrange(desc(n))
-
-count(dat_post, falbum) %>% arrange(desc(n))
-
-count(dat_post, rmale) %>% arrange(desc(n))
-
-count(dat_post, rsta) %>% arrange(desc(n))
-
-dat_post %>% filter(rpostno <= 0) %>% select(post_id, rpostno)
-```
-
 ## Join with resume level data
 
 ```{r}
@@ -333,7 +273,6 @@ rename(
 
 # Remove and rename variables in post level data
 dat_post <- dat_post %>%
-select(-c(pcat, pcity)) %>%
 rename(
     post_ptitle = ptitle,
     post_fname = fname,
@@ -367,6 +306,121 @@ mutate(
         TRUE ~ rmale
     )
 )
+
+# Fill blank values in rmale
+# Gender identification done by three RAs independently
+
+# Load the coding file
+c_rmale <- readxl::read_xlsx("Resume-Study_Data/rmale_na.xlsx") %>%
+mutate(
+    c_rmale = case_when(
+        c_rmale == 1 ~ "yes",
+        c_rmale == 0 ~ "no"
+    )
+)
+
+# Join the coding file with the main data
+dat <- dat %>%
+left_join(
+    c_rmale[c("post_id", "c_rmale")],
+    by = "post_id",
+    relationship = "many-to-one"
+) %>%
+mutate(
+    rmale = coalesce(rmale, c_rmale),
+    c_rmale = NULL
+)
+
+# rsp_cat
+# Each categorization was confirmed by two RAs
+
+# Load the coding file
+c_rsp_cat <- readxl::read_xlsx("Resume-Study_Data/rsp_cat.xlsx") %>%
+mutate(
+    c_rsp_cat = case_when(
+        c_rsp_cat %in% c("dc", "nc") ~ "no_outcome",
+        TRUE ~ c_rsp_cat
+    )
+)
+
+# Join the coding file with the main data
+dat <- dat %>%
+left_join(
+    c_rsp_cat[c("res_id", "c_rsp_cat")],
+    by = "res_id",
+    relationship = "one-to-one"
+) %>%
+mutate(
+    rsp_cat = case_when(
+        rsp == "no" ~ "no_response",
+        rsp == "yes" ~ c_rsp_cat
+    ),
+    rsp_cat2 = case_when(
+        rsp_cat %in% c("request_call", "request_cv", "request_wechat")
+        ~ "request_contact",
+        TRUE ~ rsp_cat
+    ),
+    c_rsp_cat = NULL
+)
+
+# Correct for some random errors
+dat$psal_mon[dat$psal_mon == 122] <- 12 # n = 1
+dat$fpostno[dat$fpostno == 0] <- NA # post_id == 2525
+dat$fhrno[dat$fhrno == 0] <- NA # post_id == 2525
+dat$falbum[dat$falbum == "NO"] <- "no" # n = 1
+dat$post_rname[dat$post_rname == "珊瑚跨境"] <- NA # post_id == 668
+```
+
+## Variable values
+
+```{r}
+duplicated(dat_post$post_id) %>% sum()
+
+count(dat_post, post_id) %>% filter(n != 1)
+
+count(dat_post, preg) %>% arrange(desc(n))
+
+count(dat_post, pcat) %>% arrange(desc(n))
+
+count(dat_post, pcity) %>% arrange(desc(n))
+
+count(dat, pexp) %>% arrange(desc(n))
+
+count(dat, pedu) %>% arrange(desc(n))
+
+count(dat, psal_lower) %>% arrange(desc(n))
+
+count(dat, psal_upper) %>% arrange(desc(n))
+
+count(dat, psal_mon) %>% arrange(desc(n))
+
+dat %>% filter(pcandno <= 0) %>% select(post_id, pcandno)
+
+count(dat, flogo) %>% arrange(desc(n))
+
+count(dat, fsize) %>% arrange(desc(n))
+
+count(dat, ffinc) %>% arrange(desc(n))
+
+dat %>% filter(fpostno <= 0) %>% select(post_id, fpostno)
+
+dat %>% filter(fhrno <= 0) %>% select(post_id, fhrno)
+
+count(dat, fcat) %>% arrange(desc(n))
+
+count(dat, fcap) %>% arrange(desc(n))
+
+count(dat, fhour) %>% arrange(desc(n))
+
+count(dat, fdayoff) %>% arrange(desc(n))
+
+count(dat, falbum) %>% arrange(desc(n))
+
+count(dat, rmale) %>% arrange(desc(n))
+
+count(dat, rsta) %>% arrange(desc(n))
+
+dat %>% filter(rpostno <= 0) %>% select(post_id, rpostno)
 ```
 
 ## Check for `rname` and `rmale` consistency

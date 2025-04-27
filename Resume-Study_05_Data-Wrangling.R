@@ -9,8 +9,10 @@ library(lubridate)
 # Import Raw Data ####
 
 dat_res <- read_rds("Resume-Study_Data/res-level_raw.rds")
+# version: 2025-04-07 20:53
 
 dat_post <- read_rds("Resume-Study_Data/post-level_raw.rds")
+# version: 2025-04-07 20:53
 
 # Tidy Resume Level Data ####
 
@@ -95,6 +97,8 @@ left_join(
     relationship = "many-to-one"
 )
 
+# Further Processing ####
+
 # Fill missing values in post level data from resume level data
 dat <- dat %>%
 mutate(
@@ -112,5 +116,142 @@ mutate(
         str_detect(post_rname, "女士") & (!rmale == "no" | is.na(rmale))
         ~ "no",
         TRUE ~ rmale
+    )
+)
+
+# Fill blank values in rmale
+# Gender identification done by three RAs independently
+
+# Load the coding file
+c_rmale <- readxl::read_xlsx("Resume-Study_Data/rmale_na.xlsx") %>%
+mutate(
+    c_rmale = case_when(
+        c_rmale == 1 ~ "yes",
+        c_rmale == 0 ~ "no"
+    )
+)
+
+# Join the coding file with the main data
+dat <- dat %>%
+left_join(
+    c_rmale[c("post_id", "c_rmale")],
+    by = "post_id",
+    relationship = "many-to-one"
+) %>%
+mutate(
+    rmale = coalesce(rmale, c_rmale),
+    c_rmale = NULL
+)
+
+# Response category
+# Each categorization was confirmed by two RAs
+
+# Load the coding file
+c_rsp_cat <- readxl::read_xlsx("Resume-Study_Data/rsp_cat.xlsx") %>%
+mutate(
+    c_rsp_cat = case_when(
+        c_rsp_cat %in% c("dc", "nc") ~ "no_outcome",
+        TRUE ~ c_rsp_cat
+    )
+)
+
+# Join the coding file with the main data
+dat <- dat %>%
+left_join(
+    c_rsp_cat[c("res_id", "c_rsp_cat")],
+    by = "res_id",
+    relationship = "one-to-one"
+) %>%
+mutate(
+    rsp_cat = case_when(
+        rsp == "no" ~ "no_response",
+        rsp == "yes" ~ c_rsp_cat
+    ),
+    c_rsp_cat = NULL
+)
+
+# Create a set of outcome variables
+# rsp: "yes" means receiving any response
+dat <- dat %>%
+mutate(
+    # rsp2: "yes" means receiving any response but refusal
+    rsp2 = case_when(
+        rsp_cat %in% c("no_response", "refusal") ~ "no",
+        TRUE ~ "yes"
+    ),
+    # rsp3: "yes" means receiving request for contact or invitation
+    rsp3 = case_when(
+        rsp_cat %in% c("no_response", "refusal", "no_outcome") ~ "no",
+        TRUE ~ "yes"
+    ),
+    # rsp4: "yes" means receiving invitation
+    rsp4 = case_when(
+        rsp_cat == "invitation" ~ "yes",
+        TRUE ~ "no"
+    )
+)
+
+# Correct for some random errors
+dat$psal_mon[dat$psal_mon == 122] <- 12 # n = 1
+dat$fpostno[dat$fpostno == 0] <- NA # post_id == 2525
+dat$fhrno[dat$fhrno == 0] <- NA # post_id == 2525
+dat$falbum[dat$falbum == "NO"] <- "no" # n = 1
+dat$post_rname[dat$post_rname == "珊瑚跨境"] <- NA # post_id == 668
+
+# Drop and rename variables
+dat <- dat %>%
+mutate(
+    subday = NULL,
+    subtime = NULL,
+    rsp_day = NULL,
+    rsp_time = NULL,
+    res_ptitle = NULL,
+    res_fname = NULL,
+    res_rname = NULL,
+) %>%
+rename(
+    sub_time = subtime2,
+    rsp_time = rsp_time2,
+    ptitle = post_ptitle,
+    fname = post_fname,
+    rname = post_rname,
+)
+
+# Create a dummy variable for submissions that involve change of post
+dat <- dat %>%
+mutate(
+    post_change = case_when(
+        str_detect(post_id, "_") ~ "yes",
+        TRUE ~ "no"
+    ),
+    # Keep the origional post_id variable
+    post_id_orig = post_id,
+    # Remove the suffix of post_id
+    post_id = str_remove(post_id, "_.*")
+)
+
+# Recode res_type
+dat <- dat %>%
+mutate(
+    res_type2 = case_when(
+        res_type == "balance" ~ "balance",
+        TRUE ~ "unbalance"
+    )
+)
+
+# Factorize sub_order
+dat$sub_order <- factor(dat$sub_order)
+
+# Create a dummy variable for profile picture used in the resumes
+
+dat <- dat %>%
+mutate(
+    res_pic = case_when(
+        preg == "beijing" & res_type2 == "balance" ~ "wwj",
+        preg == "beijing" & res_type2 == "unbalance" ~ "lzy",
+        preg == "guangdong" & res_type2 == "balance" ~ "lzy",
+        preg == "guangdong" & res_type2 == "unbalance" ~ "wwj",
+        preg == "shanghai" & res_type2 == "balance" ~ "lzy",
+        preg == "shanghai" & res_type2 == "unbalance" ~ "wwj"
     )
 )
