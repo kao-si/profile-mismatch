@@ -243,7 +243,6 @@ mutate(
 dat$sub_order <- factor(dat$sub_order)
 
 # Create a dummy variable for profile picture used in the resumes
-
 dat <- dat %>%
 mutate(
     res_pic = case_when(
@@ -254,4 +253,21 @@ mutate(
         preg == "shanghai" & res_type2 == "balance" ~ "lzy",
         preg == "shanghai" & res_type2 == "unbalance" ~ "wwj"
     )
+)
+
+# Transform continuous variables to discrete variables
+dat <- dat %>%
+mutate(
+    psal_lower_d = cut_number(psal_lower, n = 3,
+    labels = c("low", "medium", "high")),
+    psal_upper_d = cut_number(psal_upper, n = 3,
+    labels = c("low", "medium", "high")),
+    pcandno_d = cut_number(pcandno, n = 3,
+    labels = c("low", "medium", "high")),
+    fpostno_d = cut_number(fpostno, n = 3,
+    labels = c("low", "medium", "high")),
+    fhrno_d = cut_interval(fhrno, n = 3,
+    labels = c("low", "medium", "high")),
+    rpostno_d = cut_number(rpostno, n = 3,
+    labels = c("low", "medium", "high"))
 )

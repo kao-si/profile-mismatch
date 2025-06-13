@@ -3,6 +3,7 @@
 .RData
 .Ruserdata
 Resume-Study_Data/**
+Resume-Study_Materials/**
 *.sav
 *.xlsx
 *.Rproj
