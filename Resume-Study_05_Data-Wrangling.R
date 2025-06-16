@@ -82,6 +82,7 @@ rename(
 
 # Remove and rename variables in post level data
 dat_post <- dat_post %>%
+# remove empty columns
 select(-c(pcat, pcity)) %>%
 rename(
     post_ptitle = ptitle,
@@ -97,7 +98,7 @@ left_join(
     relationship = "many-to-one"
 )
 
-# Further Processing ####
+# Data Processing ####
 
 # Fill missing values in post level data from resume level data
 dat <- dat %>%
@@ -107,7 +108,9 @@ mutate(
     post_rname = coalesce(post_rname, res_rname)
 )
 
-# Correct errors in recruiter gender identification
+## Recruiter gender identification ====
+
+# Using recruiter title
 dat <- dat %>%
 mutate(
     rmale = case_when(
@@ -119,8 +122,11 @@ mutate(
     )
 )
 
-# Fill blank values in rmale
+# Using recruiter name
+
 # Gender identification done by three RAs independently
+# Inconsistent cases were solved by majority rule
+# Name of one recruiter was incorrect ("珊瑚跨境")
 
 # Load the coding file
 c_rmale <- readxl::read_xlsx("Resume-Study_Data/rmale_na.xlsx") %>%
@@ -143,13 +149,16 @@ mutate(
     c_rmale = NULL
 )
 
-# Response category
+## Response category ====
+
 # Each categorization was confirmed by two RAs
+# Inconsistent cases were solved by discussion
 
 # Load the coding file
 c_rsp_cat <- readxl::read_xlsx("Resume-Study_Data/rsp_cat.xlsx") %>%
 mutate(
     c_rsp_cat = case_when(
+        # "dc": discontinued conversation; "nc": non-consequential
         c_rsp_cat %in% c("dc", "nc") ~ "no_outcome",
         TRUE ~ c_rsp_cat
     )
@@ -170,7 +179,8 @@ mutate(
     c_rsp_cat = NULL
 )
 
-# Create a set of outcome variables
+## Outcome variables ====
+
 # rsp: "yes" means receiving any response
 dat <- dat %>%
 mutate(
@@ -190,6 +200,29 @@ mutate(
         TRUE ~ "no"
     )
 )
+
+# Change to numeric variables for feols
+dat <- dat %>%
+mutate(
+    rspn = case_when(
+        rsp == "yes" ~ 1,
+        rsp == "no" ~ 0
+    ),
+    rsp2n = case_when(
+        rsp2 == "yes" ~ 1,
+        rsp2 == "no" ~ 0
+    ),
+    rsp3n = case_when(
+        rsp3 == "yes" ~ 1,
+        rsp3 == "no" ~ 0
+    ),
+    rsp4n = case_when(
+        rsp4 == "yes" ~ 1,
+        rsp4 == "no" ~ 0
+    )
+)
+
+## Others ====
 
 # Correct for some random errors
 dat$psal_mon[dat$psal_mon == 122] <- 12 # n = 1
@@ -217,17 +250,38 @@ rename(
     rname = post_rname,
 )
 
-# Create a dummy variable for submissions that involve change of post
+# post_id
 dat <- dat %>%
 mutate(
+    # Create a dummy variable for submissions that involve change of post
     post_change = case_when(
         str_detect(post_id, "_") ~ "yes",
         TRUE ~ "no"
     ),
     # Keep the origional post_id variable
     post_id_orig = post_id,
-    # Remove the suffix of post_id
-    post_id = str_remove(post_id, "_.*")
+    # Remove the suffix of post_id and change it to numeric variable
+    post_id = as.numeric(str_remove(post_id, "_.*"))
+)
+
+# Correct systematic error in "pcat" by two RAs
+
+pid_mis <- c(1:62, 120:238, 311:427, 551:602,
+3001:3088, 3114:3165, 3219:3335, 3399:3453, 3521:3570)
+
+dat <- dat %>%
+mutate(
+    pcat = case_when(
+        post_id %in% pid_mis & pcat == "106" ~ "105",
+        post_id %in% pid_mis & pcat == "107" ~ "106",
+        post_id %in% pid_mis & pcat == "108" ~ "107",
+        post_id %in% pid_mis & pcat == "111" ~ "108",
+        post_id %in% pid_mis & pcat == "112" ~ "109",
+        post_id %in% pid_mis & pcat == "113" ~ "110",
+        post_id %in% pid_mis & pcat == "114" ~ "111", # 114 unused
+        post_id %in% pid_mis & pcat == "115" ~ "112", # 115 unused
+        TRUE ~ pcat
+    )
 )
 
 # Recode res_type
@@ -239,8 +293,47 @@ mutate(
     )
 )
 
-# Factorize sub_order
+# Factor "sub_order"
 dat$sub_order <- factor(dat$sub_order)
+
+# Recode and factor "pexp"
+dat <- dat %>%
+mutate(
+    pexp = case_when(
+        pexp == "在校/应届" ~ "经验不限",
+        pexp == "3-5年" ~ "1-3年", # only one post
+        TRUE ~ pexp
+    ),
+    pexp = factor(pexp, levels = c(
+        "经验不限", "1年以内", "1-3年"
+    ))
+)
+
+# Recode and factor "pedu"
+dat <- dat %>%
+mutate(
+    pedu = case_when(
+        pedu == "经验不限" ~ "初中及以下",
+        pedu == "学历不限" ~ "初中及以下",
+        pedu == "中专/中技" ~ "中专/中技/高中",
+        pedu == "高中" ~ "中专/中技/高中",
+        pedu == "大专" ~ "大专/本科",
+        pedu == "本科" ~ "大专/本科",
+        TRUE ~ pedu
+    ),
+    pedu = factor(pedu, levels = c(
+        "初中及以下", "中专/中技/高中", "大专/本科"
+    ))
+)
+
+# Factor "fsize"
+dat <- dat %>%
+mutate(
+    fsize = factor(fsize, levels = c(
+        "0-20人", "20-99人", "100-499人", "500-999人",
+        "1000-9999人", "10000人以上"
+    ))
+)
 
 # Create a dummy variable for profile picture used in the resumes
 dat <- dat %>%
@@ -253,21 +346,4 @@ mutate(
         preg == "shanghai" & res_type2 == "balance" ~ "lzy",
         preg == "shanghai" & res_type2 == "unbalance" ~ "wwj"
     )
-)
-
-# Transform continuous variables to discrete variables
-dat <- dat %>%
-mutate(
-    psal_lower_d = cut_number(psal_lower, n = 3,
-    labels = c("low", "medium", "high")),
-    psal_upper_d = cut_number(psal_upper, n = 3,
-    labels = c("low", "medium", "high")),
-    pcandno_d = cut_number(pcandno, n = 3,
-    labels = c("low", "medium", "high")),
-    fpostno_d = cut_number(fpostno, n = 3,
-    labels = c("low", "medium", "high")),
-    fhrno_d = cut_interval(fhrno, n = 3,
-    labels = c("low", "medium", "high")),
-    rpostno_d = cut_number(rpostno, n = 3,
-    labels = c("low", "medium", "high"))
 )
